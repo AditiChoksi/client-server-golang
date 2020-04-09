@@ -29,17 +29,17 @@ type PDAProcessor struct{
 var c = cache.New(5*time.Minute, 10*time.Minute)
 
 // Function to push data on to the stack when executing the PDA. It modifies the stack.
-func push(p *PDAProcessor, val string) {
+func push(p PDAProcessor, val string) {
 	p.Stack = append(p.Stack, val)
 }
 
 // Function to pop data from the stack when executing the PDA. It modifies the stack.
-func pop(p *PDAProcessor) {
+func pop(p PDAProcessor) {
 	p.Stack = p.Stack[:len(p.Stack) -1]
 }
 
 // Function to obtain the top n elements of the stack. This function does not modify the stack.
-func peekInternal(p *PDAProcessor, k int) []string {
+func peekInternal(p PDAProcessor, k int) []string {
 	
 	top := [] string{}
 	l := len(p.Stack)
@@ -53,6 +53,19 @@ func peekInternal(p *PDAProcessor, k int) []string {
 	return top
 }
 
+// Function to pop data from the stack when executing the PDA. It modifies the stack.
+func stacklen(w http.ResponseWriter, r *http.Request) {
+	var vars = mux.Vars(r)
+	var id = vars["id"]
+
+	var p, _ = c.Get(id)
+	proc := p.(*PDAProcessor)
+
+	var l = len(proc.Stack)
+
+	json.NewEncoder(w).Encode(l)
+}
+
 // Function to obtain the top n elements of the stack. This function does not modify the stack.
 func peek(w http.ResponseWriter, r *http.Request) {
 
@@ -62,7 +75,7 @@ func peek(w http.ResponseWriter, r *http.Request) {
 	k, _ := strconv.Atoi(kstring)
 
 	var p, _ = c.Get(id)
-	proc := p.(*PDAProcessor)
+	proc := p.(PDAProcessor)
 
 	top := peekInternal(proc, k)
 	
@@ -82,7 +95,7 @@ func reset(w http.ResponseWriter, r *http.Request) {
 }
 
 func createPda(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Endpoint Hit: Create Pdas Endpoint Hit")
+	fmt.Println("Endpoint Hit: Create Pdas")
 	var p PDAProcessor
 	
 	var vars = mux.Vars(r)
@@ -98,14 +111,13 @@ func createPda(w http.ResponseWriter, r *http.Request) {
 	//fmt.Fprintf(w, "cache: %+v", c)
 	//var x, _ = c.Get(id)
 	//fmt.Fprintf(w, "Pda: %+v", x)
-	fmt.Fprintf(w, "Items count: %v", c.Items())
 	
 	json.NewEncoder(w).Encode(c.Items())
 
 }
 
 func returnAllPdas(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Endpoint Hit: Return all Pdas Endpoint Hit")
+	fmt.Println("Endpoint Hit: Return all Pdas")
 	json.NewEncoder(w).Encode(c.Items())
 }
 
@@ -153,25 +165,33 @@ func is_accepted(w http.ResponseWriter, r *http.Request) {
 
 // The done returns the final status of the current state and the stack after the input string is processed.
 func done(proc PDAProcessor, is_accepted bool, transition_count int) {
-	fmt.Println("pda = ", proc.Name,"::total_clock = ", transition_count, "::method = is_accepted = ", is_accepted,"::Current State = ", current_state(proc))
-	fmt.Println("Current_state: ", current_state(proc))
+	fmt.Println("pda = ", proc.Name,"::total_clock = ", transition_count, "::method = is_accepted = ", is_accepted,"::Current State = ", proc.Current_State)
+	fmt.Println("Current_state: ", proc.Current_State)
 	fmt.Println(proc.Stack)
 }
 
 // Returns the current state of the PDA
-func current_state(proc PDAProcessor) string{
-	return proc.Current_State
+func current_state(w http.ResponseWriter, r *http.Request) {
+	var vars = mux.Vars(r)
+	var id = vars["id"]
+
+	var p, _ = c.Get(id)
+	proc := p.(*PDAProcessor)
+
+	json.NewEncoder(w).Encode(proc.Current_State)
+
 }
 
 // This function accepts the input string and performs the necessary transitions and 
 // stack operations for every token,
 func put(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("Endpoint Hit: Put")
 	var vars = mux.Vars(r)
 	var id = vars["id"]
 	var s = vars["token"]
 
 	var p, _ = c.Get(id)
-	proc := p.(*PDAProcessor)
+	proc := p.(PDAProcessor)
 
 	transitions := proc.Transitions
 	tran_len := len(transitions)
@@ -244,7 +264,10 @@ func put(w http.ResponseWriter, r *http.Request) {
 		}	       
 	}
 
+	c.Set(id, proc, cache.NoExpiration)
+
 	fmt.Println("Clock count for consuming the input token = ", transition_count)
+	json.NewEncoder(w).Encode(transition_count)
 	//return transition_count
 }
 
@@ -256,7 +279,7 @@ func eos(w http.ResponseWriter, r *http.Request) {
 	var id = vars["id"]
 
 	var p, _ = c.Get(id)
-	proc := p.(*PDAProcessor)
+	proc := p.(PDAProcessor)
 
 	length_of_stack := len(proc.Stack)
 	allowed_transitions := proc.Transitions
@@ -290,7 +313,7 @@ func eos(w http.ResponseWriter, r *http.Request) {
 
 // Pushes initial EOS token into the stack and moves to the next state indicating
 // the start of transitions
-func check_for_first_move(proc *PDAProcessor, transition_count int) int{
+func check_for_first_move(proc PDAProcessor, transition_count int) int{
 	allowed_transitions := proc.Transitions
 	target_state := ""
 	input := ""
@@ -353,13 +376,19 @@ func  handleRequest() {
 	myRouter.HandleFunc("/pdas/{id}/eos/{position}", eos)
 	myRouter.HandleFunc("/pdas/{id}/is_accepted", is_accepted)
 	myRouter.HandleFunc("/pdas/{id}/stack/top/{k}", peek)
+	myRouter.HandleFunc("/pdas/{id}/stack/len", stacklen)
+	myRouter.HandleFunc("/pdas/{id}/state", current_state)
+	//myRouter.HandleFunc("/pdas/{id}/tokens", gettokens)
+	//myRouter.HandleFunc("/pdas/{id}/snapshot/{k}", snapshot)
+	//myRouter.HandleFunc("/pdas/{id}/close", close)
+	//myRouter.HandleFunc("/pdas/{id}/delete", delete)
 
 
-	log.Fatal(http.ListenAndServe(":8081", myRouter))
+	log.Fatal(http.ListenAndServe(":8080", myRouter))
 }
 
 func main(){
-	fmt.Println("Hi")
+	fmt.Println("Server started. Listening at port 8080")
 
 	handleRequest()
 }
