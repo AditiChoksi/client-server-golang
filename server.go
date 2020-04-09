@@ -182,16 +182,23 @@ func current_state(w http.ResponseWriter, r *http.Request) {
 
 }
 
-// This function accepts the input string and performs the necessary transitions and 
-// stack operations for every token,
 func put(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Endpoint Hit: Put")
+fmt.Println("Endpoint Hit: Put")
 	var vars = mux.Vars(r)
 	var id = vars["id"]
-	var s = vars["token"]
+	var token = vars["token"]
 
 	var p, _ = c.Get(id)
 	proc := p.(PDAProcessor)
+	var transition_count = putInternal(proc,token)
+
+	json.NewEncoder(w).Encode(transition_count)
+}
+
+// This function accepts the input string and performs the necessary transitions and 
+// stack operations for every token,
+func putInternal(proc PDAProcessor, token string) int{
+	
 
 	transitions := proc.Transitions
 	tran_len := len(transitions)
@@ -218,7 +225,7 @@ func put(w http.ResponseWriter, r *http.Request) {
 			transition_count = transition_count + 1
 		}
 
-		if (allowed_current_state == proc.Current_State && input == s)  {
+		if (allowed_current_state == proc.Current_State && input == token)  {
 
 			//Perform Push action
 			if action_item != "null" && allowed_top_of_stack == "null" {
@@ -264,11 +271,11 @@ func put(w http.ResponseWriter, r *http.Request) {
 		}	       
 	}
 
-	c.Set(id, proc, cache.NoExpiration)
+	//c.Set(id, proc, cache.NoExpiration)
 
 	fmt.Println("Clock count for consuming the input token = ", transition_count)
-	json.NewEncoder(w).Encode(transition_count)
-	//return transition_count
+	//json.NewEncoder(w).Encode(transition_count)
+	return transition_count
 }
 
 // Performs the last transition to move the Automata to accepting state after the input
