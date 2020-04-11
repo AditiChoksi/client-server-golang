@@ -9,6 +9,7 @@ import (
 	"github.com/patrickmn/go-cache"
 	"time"
 	"strconv"
+	"sync"
 )
 
 // This class simulates a PDA processor that is it runs the PDA for teh provided input.
@@ -28,6 +29,7 @@ type PDAProcessor struct{
 
 //var pdaList []PDAProcessor
 var c = cache.New(5*time.Minute, 10*time.Minute)
+var wg sync.WaitGroup
 
 // Function to push data on to the stack when executing the PDA. It modifies the stack.
 func push(p *PDAProcessor, val string) {
@@ -202,14 +204,17 @@ func put(w http.ResponseWriter, r *http.Request) {
 	var p, _ = c.Get(id)
 	proc := p.(PDAProcessor)
 	check_for_first_move(&proc, 1)
-	var transition_count = putInternal(proc,token)
 
-	json.NewEncoder(w).Encode(transition_count)
+	wg.Add(1)
+	go putInternal(proc,token)
+	wg.Wait()
 }
 
 // This function accepts the input string and performs the necessary transitions and 
 // stack operations for every token,
 func putInternal(proc PDAProcessor, token string) int{
+
+	defer wg.Done()
 	
 	transitions := proc.Transitions
 	tran_len := len(transitions)
@@ -288,6 +293,7 @@ func putInternal(proc PDAProcessor, token string) int{
 
 	fmt.Println("Clock count for consuming the input token = ", transition_count)
 	//json.NewEncoder(w).Encode(transition_count)
+	
 	return transition_count
 }
 
