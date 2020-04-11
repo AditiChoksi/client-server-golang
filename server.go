@@ -9,7 +9,7 @@ import (
 	"github.com/patrickmn/go-cache"
 	"time"
 	"strconv"
-	"sync"
+	//"sync"
 )
 
 // This class simulates a PDA processor that is it runs the PDA for teh provided input.
@@ -25,6 +25,9 @@ type PDAProcessor struct{
 	Eos string
 	Stack [] string
 	Current_State string
+	Next_Position int
+	Hold_back_Position [] string
+	Hold_back_Token [] string
 }
 
 type Token struct {
@@ -33,7 +36,7 @@ type Token struct {
 
 //var pdaList []PDAProcessor
 var c = cache.New(5*time.Minute, 10*time.Minute)
-var wg sync.WaitGroup
+//var wg sync.WaitGroup
 
 // Function to push data on to the stack when executing the PDA. It modifies the stack.
 func push(p *PDAProcessor, val string) {
@@ -107,6 +110,9 @@ func reset(w http.ResponseWriter, r *http.Request) {
 func resetInternal(p *PDAProcessor) {
 	p.Stack = make([]string, 0)
 	p.Current_State = p.Start_state
+	p.Next_Position = 0
+	p.Hold_back_Position = make([]string, 0)
+	p.Hold_back_Token = make([]string, 0)
 }
 
 func createPda(w http.ResponseWriter, r *http.Request) {
@@ -138,16 +144,6 @@ func returnAllPdas(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(c.Items())
 }
 
-
-// Function to open the grammar file. This function unmarshal's the data input into the PDA structure.
-func open(data []byte, p *PDAProcessor) bool {	
-	err := json.Unmarshal(data, &p)
-	if err != nil {
-		fmt.Print(err)
-		return false
-	}
-	return true
-}
 
 // Function to check if the input string has been accepted by the pda 
 func is_accepted(w http.ResponseWriter, r *http.Request) {
@@ -203,6 +199,7 @@ func put(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Endpoint Hit: Put")
 	var vars = mux.Vars(r)
 	var id = vars["id"]
+	var position = vars["position"]
 
 	var t Token
 	json.NewDecoder(r.Body).Decode(&t)
@@ -211,17 +208,28 @@ func put(w http.ResponseWriter, r *http.Request) {
 	var p, _ = c.Get(id)
 	proc := p.(PDAProcessor)
 	check_for_first_move(&proc, 1)
+	pos_int, _ := strconv.Atoi(position)
+	if(proc.Next_Position == pos_int) {
+		fmt.Println ("Calling Put")
+		putInternal(proc,token)
+	} else
+	{
+		proc.Hold_back_Token = append(proc.Hold_back_Token , token)
+		proc.Hold_back_Position = append(proc.Hold_back_Position , position)
+		c.Set(proc.Id, proc, cache.NoExpiration)
 
-	wg.Add(1)
-	go putInternal(proc,token)
-	wg.Wait()
+	}
+
+	//wg.Add(1)
+	//go putInternal(proc,token)
+	//wg.Wait()
 }
 
 // This function accepts the input string and performs the necessary transitions and 
 // stack operations for every token,
 func putInternal(proc PDAProcessor, token string) int{
 
-	defer wg.Done()
+	//defer wg.Done()
 	
 	transitions := proc.Transitions
 	tran_len := len(transitions)
@@ -257,6 +265,7 @@ func putInternal(proc PDAProcessor, token string) int{
 				fmt.Println("New State ", target_state)
 				fmt.Println("Stack: ", proc.Stack)
 				transition_count = transition_count + 1
+				proc.Next_Position = proc.Next_Position + 1
 				proc.Current_State = target_state
 				push(&proc, action_item)
 
@@ -268,6 +277,7 @@ func putInternal(proc PDAProcessor, token string) int{
 				fmt.Println("New State ", target_state)
 				fmt.Println("Stack: ", proc.Stack)
 				transition_count = transition_count + 1
+				proc.Next_Position = proc.Next_Position + 1
 				proc.Current_State = target_state
 				push(&proc, action_item)
 				break
@@ -279,6 +289,7 @@ func putInternal(proc PDAProcessor, token string) int{
 				fmt.Println("New State ",target_state)
 				fmt.Println("Stack: ", proc.Stack)
 				transition_count = transition_count + 1
+				proc.Next_Position = proc.Next_Position + 1
 				proc.Current_State = target_state
 				break
 				//Neither push nor pop action required
@@ -289,6 +300,7 @@ func putInternal(proc PDAProcessor, token string) int{
 				fmt.Println("Stack: ", proc.Stack)
 				proc.Current_State = target_state
 				transition_count = transition_count + 1
+				proc.Next_Position = proc.Next_Position + 1
 				break
 			}
 		}	       
