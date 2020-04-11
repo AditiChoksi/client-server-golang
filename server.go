@@ -27,6 +27,10 @@ type PDAProcessor struct{
 	Current_State string
 }
 
+type Token struct {
+	Token string
+}
+
 //var pdaList []PDAProcessor
 var c = cache.New(5*time.Minute, 10*time.Minute)
 var wg sync.WaitGroup
@@ -151,7 +155,7 @@ func is_accepted(w http.ResponseWriter, r *http.Request) {
 	var id = vars["id"]
 
 	var p, _ = c.Get(id)
-	proc := p.(*PDAProcessor)
+	proc := p.(PDAProcessor)
 
 	flag := false
 	accepting_states := proc.Accepting_states
@@ -199,7 +203,10 @@ func put(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Endpoint Hit: Put")
 	var vars = mux.Vars(r)
 	var id = vars["id"]
-	var token = vars["token"]
+
+	var t Token
+	json.NewDecoder(r.Body).Decode(&t)
+	var token = t.Token
 
 	var p, _ = c.Get(id)
 	proc := p.(PDAProcessor)
@@ -287,7 +294,7 @@ func putInternal(proc PDAProcessor, token string) int{
 		}	       
 	}
 
-	fmt.Println(proc)
+	//fmt.Println(proc)
 
 	c.Set(proc.Id, proc, cache.NoExpiration)
 
@@ -301,6 +308,8 @@ func putInternal(proc PDAProcessor, token string) int{
 // string has been successfully parsed. 
 func eos(w http.ResponseWriter, r *http.Request) {
 
+	fmt.Println("Endpoint Hit: Eos")
+
 	var vars = mux.Vars(r)
 	var id = vars["id"]
 
@@ -308,20 +317,21 @@ func eos(w http.ResponseWriter, r *http.Request) {
 	proc := p.(PDAProcessor)
 
 	length_of_stack := len(proc.Stack)
-	allowed_transitions := proc.Transitions
+	transitions := proc.Transitions
 	target_state := ""
 	allowed_top_of_stack := ""
 	var currentStackSymbol = ""
 	var top = peekInternal(&proc, 1)
+	
 	if(len(top)>=1){
 		currentStackSymbol = top[0]
 	}
-	for j := 0; j < len(allowed_transitions); j++ {	
-		var allowed_current_state = allowed_transitions[j][0]
-		allowed_top_of_stack = allowed_transitions[j][2]
+	for j := 0; j < len(transitions); j++ {	
+		var allowed_current_state = transitions[j][0]
+		allowed_top_of_stack = transitions[j][2]
 		
 		if allowed_current_state == proc.Current_State && allowed_top_of_stack == currentStackSymbol{
-			target_state = allowed_transitions[j][3]
+			target_state = transitions[j][3]
 			break
 		}
 	}
@@ -335,6 +345,8 @@ func eos(w http.ResponseWriter, r *http.Request) {
 			pop(&proc)
 		}
 	}
+
+	c.Set(proc.Id, proc, cache.NoExpiration)
 }
 
 // Pushes initial EOS token into the stack and moves to the next state indicating
@@ -400,7 +412,7 @@ func  handleRequest() {
 	myRouter.HandleFunc("/pdas", returnAllPdas)
 	myRouter.HandleFunc("/pdas/{id}", createPda)
 	myRouter.HandleFunc("/pdas/{id}/reset", reset)
-	myRouter.HandleFunc("/pdas/{id}/{token}/{position}", put)
+	myRouter.HandleFunc("/pdas/{id}/tokens/{position}", put)
 	myRouter.HandleFunc("/pdas/{id}/eos/{position}", eos)
 	myRouter.HandleFunc("/pdas/{id}/is_accepted", is_accepted)
 	myRouter.HandleFunc("/pdas/{id}/stack/top/{k}", peek)
