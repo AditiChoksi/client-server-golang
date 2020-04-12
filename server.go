@@ -10,7 +10,7 @@ import (
 	"time"
 	"strconv"
 	"sort"
-	"sync"
+	//"sync"
 )
 
 // This class simulates a PDA processor that is it runs the PDA for teh provided input.
@@ -30,6 +30,12 @@ type PDAProcessor struct{
 	Hold_back_Queue [] HoldBackStruct
 }
 
+type Snapshot struct { 
+	Topk [] string
+	Current_State string
+	Hold_back_Queue [] HoldBackStruct
+}
+
 type Token struct {
 	Token string
 }
@@ -40,7 +46,7 @@ type HoldBackStruct struct {
 }
 
 var c = cache.New(5*time.Minute, 10*time.Minute)
-var wg sync.WaitGroup
+//var wg sync.WaitGroup
 
 // Function to push data on to the stack when executing the PDA. It modifies the stack.
 func push(p *PDAProcessor, val string) {
@@ -54,20 +60,6 @@ func pop(p *PDAProcessor) {
 	//c.Set(p.Id, p, cache.NoExpiration)
 }
 
-// Function to obtain the top n elements of the stack. This function does not modify the stack.
-func peekInternal(p *PDAProcessor, k int) []string {
-	
-	top := [] string{}
-	l := len(p.Stack)
-	if (l <= k) {
-		top = p.Stack
-	} else if ( k == 1) {
-		top = append(top, p.Stack[l-1])
-	} else {
-		top = p.Stack[l-k:l-1]
-	}
-	return top
-}
 
 // Function to pop data from the stack when executing the PDA. It modifies the stack.
 func stacklen(w http.ResponseWriter, r *http.Request) {
@@ -97,6 +89,21 @@ func peek(w http.ResponseWriter, r *http.Request) {
 	
 	json.NewEncoder(w).Encode(top)
 	//return top
+}
+
+// Function to obtain the top n elements of the stack. This function does not modify the stack.
+func peekInternal(p *PDAProcessor, k int) []string {
+	
+	top := [] string{}
+	l := len(p.Stack)
+	if (l <= k) {
+		top = p.Stack
+	} else if ( k == 1) {
+		top = append(top, p.Stack[l-1])
+	} else {
+		top = p.Stack[l-k:l-1]
+	}
+	return top
 }
 
 // API to reset the PDA and the stack. This deletes everything from the stack 
@@ -215,9 +222,9 @@ func put(w http.ResponseWriter, r *http.Request) {
 	if(proc.Next_Position == pos_int) {
 		fmt.Println ("Calling Put")
 		putInternal(proc,token)
-		wg.Add(1)
+		//wg.Add(1)
 		process_hold_back_tokens(proc)
-		wg.Wait()
+		//wg.Wait()
 
 	} else
 	{
@@ -236,7 +243,7 @@ func put(w http.ResponseWriter, r *http.Request) {
 }
 
 func process_hold_back_tokens(proc PDAProcessor) {
-	defer wg.Done()
+	//defer wg.Done()
 	for {
 		if(len(proc.Hold_back_Queue) == 0) {
 			break
@@ -331,6 +338,32 @@ func putInternal(proc PDAProcessor, token string){
 	c.Set(proc.Id, proc, cache.NoExpiration)	
 }
 
+func gettokens(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("Endpoint Hit: Get Queued tokens")
+	var vars = mux.Vars(r)
+	var id = vars["id"]
+	var p, _ = c.Get(id)
+	proc := p.(PDAProcessor)
+	for j := 0; j < len(proc.Hold_back_Queue)-1; j++ {
+		fmt.Println("Queued token :", proc.Hold_back_Queue[j].Hold_back_Token, " At position :", proc.Hold_back_Queue[j].Hold_back_Position)
+	}
+	json.NewEncoder(w).Encode(proc.Hold_back_Queue)
+}
+
+func snapshot(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("Endpoint Hit: Get snapshot")
+	var vars = mux.Vars(r)
+	var id = vars["id"]
+	var p, _ = c.Get(id)
+	proc := p.(PDAProcessor)
+	var snap Snapshot
+	snap.Topk = make([]string, 0)
+	snap.Current_State = proc.Current_State
+	snap.Hold_back_Queue = proc.Hold_back_Queue
+	snap.Topk = peekInternal(&proc,5)
+	json.NewEncoder(w).Encode(snap)
+}
+
 // Performs the last transition to move the Automata to accepting state after the input
 // string has been successfully parsed. 
 func eos(w http.ResponseWriter, r *http.Request) {
@@ -378,7 +411,7 @@ func eos(w http.ResponseWriter, r *http.Request) {
 
 // Pushes initial EOS token into the stack and moves to the next state indicating
 // the start of transitions
-func check_for_first_move(proc *PDAProcessor, transition_count int) int{
+func check_for_first_move(proc *PDAProcessor, transition_count int){
 	transitions := proc.Transitions
 	target_state := ""
 	input := ""
@@ -410,7 +443,6 @@ func check_for_first_move(proc *PDAProcessor, transition_count int) int{
 	} 
 
 	//c.Set(proc.Id, proc, cache.NoExpiration)
-	return transition_count
 }
 
 //Checks whether the input string is composed of the allowed characters. 
@@ -445,8 +477,8 @@ func  handleRequest() {
 	myRouter.HandleFunc("/pdas/{id}/stack/top/{k}", peek)
 	myRouter.HandleFunc("/pdas/{id}/stack/len", stacklen)
 	myRouter.HandleFunc("/pdas/{id}/state", current_state)
-	//myRouter.HandleFunc("/pdas/{id}/tokens", gettokens)
-	//myRouter.HandleFunc("/pdas/{id}/snapshot/{k}", snapshot)
+	myRouter.HandleFunc("/pdas/{id}/tokens", gettokens)
+	myRouter.HandleFunc("/pdas/{id}/snapshot/{k}", snapshot)
 	//myRouter.HandleFunc("/pdas/{id}/close", close)
 	//myRouter.HandleFunc("/pdas/{id}/delete", delete)
 
