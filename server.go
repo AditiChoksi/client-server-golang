@@ -9,6 +9,7 @@ import (
 	"github.com/patrickmn/go-cache"
 	"time"
 	"strconv"
+	"sort"
 	//"sync"
 )
 
@@ -26,15 +27,24 @@ type PDAProcessor struct{
 	Stack [] string
 	Current_State string
 	Next_Position int
-	Hold_back_Position [] string
-	Hold_back_Token [] string
+	Hold_back_Queue [] HoldBackStruct
+}
+
+type Snapshot struct { 
+	Topk [] string
+	Current_State string
+	Hold_back_Queue [] HoldBackStruct
 }
 
 type Token struct {
 	Token string
 }
 
-//var pdaList []PDAProcessor
+type HoldBackStruct struct {
+	Hold_back_Position string
+	Hold_back_Token string
+}
+
 var c = cache.New(5*time.Minute, 10*time.Minute)
 //var wg sync.WaitGroup
 
@@ -50,20 +60,6 @@ func pop(p *PDAProcessor) {
 	//c.Set(p.Id, p, cache.NoExpiration)
 }
 
-// Function to obtain the top n elements of the stack. This function does not modify the stack.
-func peekInternal(p *PDAProcessor, k int) []string {
-	
-	top := [] string{}
-	l := len(p.Stack)
-	if (l <= k) {
-		top = p.Stack
-	} else if ( k == 1) {
-		top = append(top, p.Stack[l-1])
-	} else {
-		top = p.Stack[l-k:l-1]
-	}
-	return top
-}
 
 // Function to pop data from the stack when executing the PDA. It modifies the stack.
 func stacklen(w http.ResponseWriter, r *http.Request) {
@@ -95,6 +91,21 @@ func peek(w http.ResponseWriter, r *http.Request) {
 	//return top
 }
 
+// Function to obtain the top n elements of the stack. This function does not modify the stack.
+func peekInternal(p *PDAProcessor, k int) []string {
+	
+	top := [] string{}
+	l := len(p.Stack)
+	if (l <= k) {
+		top = p.Stack
+	} else if ( k == 1) {
+		top = append(top, p.Stack[l-1])
+	} else {
+		top = p.Stack[l-k:l-1]
+	}
+	return top
+}
+
 // API to reset the PDA and the stack. This deletes everything from the stack 
 // and sets the current state to the start state so that we can start new.
 func reset(w http.ResponseWriter, r *http.Request) {
@@ -111,8 +122,7 @@ func resetInternal(p *PDAProcessor) {
 	p.Stack = make([]string, 0)
 	p.Current_State = p.Start_state
 	p.Next_Position = 0
-	p.Hold_back_Position = make([]string, 0)
-	p.Hold_back_Token = make([]string, 0)
+	p.Hold_back_Queue = make([]HoldBackStruct, 0)
 }
 
 func createPda(w http.ResponseWriter, r *http.Request) {
@@ -212,28 +222,53 @@ func put(w http.ResponseWriter, r *http.Request) {
 	if(proc.Next_Position == pos_int) {
 		fmt.Println ("Calling Put")
 		putInternal(proc,token)
+		//wg.Add(1)
+		process_hold_back_tokens(proc)
+		//wg.Wait()
+
 	} else
 	{
-		proc.Hold_back_Token = append(proc.Hold_back_Token , token)
-		proc.Hold_back_Position = append(proc.Hold_back_Position , position)
+		var hold_back HoldBackStruct
+
+		hold_back.Hold_back_Token = token
+		hold_back.Hold_back_Position = position
+
+		proc.Hold_back_Queue = append(proc.Hold_back_Queue , hold_back)
+		sort.Slice(proc.Hold_back_Queue, func(i, j int) bool {
+			return proc.Hold_back_Queue[i].Hold_back_Position > proc.Hold_back_Queue[j].Hold_back_Position
+		})
 		c.Set(proc.Id, proc, cache.NoExpiration)
 
-	}
+	}	
+}
 
-	//wg.Add(1)
-	//go putInternal(proc,token)
-	//wg.Wait()
+func process_hold_back_tokens(proc PDAProcessor) {
+	//defer wg.Done()
+	for {
+		if(len(proc.Hold_back_Queue) == 0) {
+			break
+		}
+		var p, _ = c.Get(proc.Id)
+		proc = p.(PDAProcessor)
+		hold_back := proc.Hold_back_Queue[len(proc.Hold_back_Queue) -1]
+		pos_int, _ := strconv.Atoi(hold_back.Hold_back_Position)
+		if(proc.Next_Position == pos_int) {
+			proc.Hold_back_Queue = proc.Hold_back_Queue[:len(proc.Hold_back_Queue) -1]
+			putInternal(proc,hold_back.Hold_back_Token)
+			//time.Sleep(time.Second)
+		} else 
+		{
+			break
+		}
+    	
+	}	
 }
 
 // This function accepts the input string and performs the necessary transitions and 
 // stack operations for every token,
-func putInternal(proc PDAProcessor, token string) int{
-
-	//defer wg.Done()
-	
+func putInternal(proc PDAProcessor, token string){	
 	transitions := proc.Transitions
 	tran_len := len(transitions)
-	transition_count := 0
 	for j := 0; j < tran_len; j++ {
 		var allowed_current_state = transitions[j][0]
 		var input = transitions[j][1]
@@ -253,7 +288,6 @@ func putInternal(proc PDAProcessor, token string) int{
 			fmt.Println("Stack: ", proc.Stack)
 			fmt.Println("New State ", target_state)
 			proc.Current_State = target_state
-			transition_count = transition_count + 1
 		}
 
 		if (allowed_current_state == proc.Current_State && input == token)  {
@@ -264,7 +298,6 @@ func putInternal(proc PDAProcessor, token string) int{
 				fmt.Println("Push ", action_item, " on the stack.")
 				fmt.Println("New State ", target_state)
 				fmt.Println("Stack: ", proc.Stack)
-				transition_count = transition_count + 1
 				proc.Next_Position = proc.Next_Position + 1
 				proc.Current_State = target_state
 				push(&proc, action_item)
@@ -276,7 +309,6 @@ func putInternal(proc PDAProcessor, token string) int{
 				fmt.Println("Push ", action_item, " on the stack")
 				fmt.Println("New State ", target_state)
 				fmt.Println("Stack: ", proc.Stack)
-				transition_count = transition_count + 1
 				proc.Next_Position = proc.Next_Position + 1
 				proc.Current_State = target_state
 				push(&proc, action_item)
@@ -288,7 +320,6 @@ func putInternal(proc PDAProcessor, token string) int{
 				fmt.Println("Pop top of the stack.")
 				fmt.Println("New State ",target_state)
 				fmt.Println("Stack: ", proc.Stack)
-				transition_count = transition_count + 1
 				proc.Next_Position = proc.Next_Position + 1
 				proc.Current_State = target_state
 				break
@@ -299,21 +330,38 @@ func putInternal(proc PDAProcessor, token string) int{
 				fmt.Println("New State ",target_state)
 				fmt.Println("Stack: ", proc.Stack)
 				proc.Current_State = target_state
-				transition_count = transition_count + 1
 				proc.Next_Position = proc.Next_Position + 1
 				break
 			}
 		}	       
 	}
+	c.Set(proc.Id, proc, cache.NoExpiration)	
+}
 
-	//fmt.Println(proc)
+func gettokens(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("Endpoint Hit: Get Queued tokens")
+	var vars = mux.Vars(r)
+	var id = vars["id"]
+	var p, _ = c.Get(id)
+	proc := p.(PDAProcessor)
+	for j := 0; j < len(proc.Hold_back_Queue)-1; j++ {
+		fmt.Println("Queued token :", proc.Hold_back_Queue[j].Hold_back_Token, " At position :", proc.Hold_back_Queue[j].Hold_back_Position)
+	}
+	json.NewEncoder(w).Encode(proc.Hold_back_Queue)
+}
 
-	c.Set(proc.Id, proc, cache.NoExpiration)
-
-	fmt.Println("Clock count for consuming the input token = ", transition_count)
-	//json.NewEncoder(w).Encode(transition_count)
-	
-	return transition_count
+func snapshot(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("Endpoint Hit: Get snapshot")
+	var vars = mux.Vars(r)
+	var id = vars["id"]
+	var p, _ = c.Get(id)
+	proc := p.(PDAProcessor)
+	var snap Snapshot
+	snap.Topk = make([]string, 0)
+	snap.Current_State = proc.Current_State
+	snap.Hold_back_Queue = proc.Hold_back_Queue
+	snap.Topk = peekInternal(&proc,5)
+	json.NewEncoder(w).Encode(snap)
 }
 
 // Performs the last transition to move the Automata to accepting state after the input
@@ -363,7 +411,7 @@ func eos(w http.ResponseWriter, r *http.Request) {
 
 // Pushes initial EOS token into the stack and moves to the next state indicating
 // the start of transitions
-func check_for_first_move(proc *PDAProcessor, transition_count int) int{
+func check_for_first_move(proc *PDAProcessor, transition_count int){
 	transitions := proc.Transitions
 	target_state := ""
 	input := ""
@@ -395,7 +443,6 @@ func check_for_first_move(proc *PDAProcessor, transition_count int) int{
 	} 
 
 	//c.Set(proc.Id, proc, cache.NoExpiration)
-	return transition_count
 }
 
 //Checks whether the input string is composed of the allowed characters. 
@@ -430,8 +477,8 @@ func  handleRequest() {
 	myRouter.HandleFunc("/pdas/{id}/stack/top/{k}", peek)
 	myRouter.HandleFunc("/pdas/{id}/stack/len", stacklen)
 	myRouter.HandleFunc("/pdas/{id}/state", current_state)
-	//myRouter.HandleFunc("/pdas/{id}/tokens", gettokens)
-	//myRouter.HandleFunc("/pdas/{id}/snapshot/{k}", snapshot)
+	myRouter.HandleFunc("/pdas/{id}/tokens", gettokens)
+	myRouter.HandleFunc("/pdas/{id}/snapshot/{k}", snapshot)
 	//myRouter.HandleFunc("/pdas/{id}/close", close)
 	//myRouter.HandleFunc("/pdas/{id}/delete", delete)
 
