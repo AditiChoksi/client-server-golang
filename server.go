@@ -111,6 +111,7 @@ func reset(w http.ResponseWriter, r *http.Request) {
 
 	p := cache[id]
 	resetInternal(&p)
+	cache[id] = p
 }
 
 // API to reset the PDA and the stack. This deletes everything from the stack 
