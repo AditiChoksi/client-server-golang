@@ -10,7 +10,7 @@ import (
 	"time"
 	"strconv"
 	"sort"
-	//"sync"
+	"sync"
 )
 
 // This class simulates a PDA processor that is it runs the PDA for teh provided input.
@@ -45,21 +45,18 @@ type HoldBackStruct struct {
 	Hold_back_Token string
 }
 
-var c = cache.New(5*time.Minute, 10*time.Minute)
-//var wg sync.WaitGroup
+var c = cache.New(5*time.Minute, 2*time.Second)
+var wg sync.WaitGroup
 
 // Function to push data on to the stack when executing the PDA. It modifies the stack.
 func push(p *PDAProcessor, val string) {
 	p.Stack = append(p.Stack, val)
-	//c.Set(p.Id, p, cache.NoExpiration)
 }
 
 // Function to pop data from the stack when executing the PDA. It modifies the stack.
 func pop(p *PDAProcessor) {
 	p.Stack = p.Stack[:len(p.Stack) -1]
-	//c.Set(p.Id, p, cache.NoExpiration)
 }
-
 
 // Function to pop data from the stack when executing the PDA. It modifies the stack.
 func stacklen(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +85,7 @@ func peek(w http.ResponseWriter, r *http.Request) {
 	top := peekInternal(&proc, k)
 	
 	json.NewEncoder(w).Encode(top)
-	//return top
+
 }
 
 // Function to obtain the top n elements of the stack. This function does not modify the stack.
@@ -133,20 +130,19 @@ func createPda(w http.ResponseWriter, r *http.Request) {
 	var id = vars["id"]
 
 	err := json.NewDecoder(r.Body).Decode(&p)
-	p.Id = id
-	resetInternal(&p)
+
 	if err != nil {
         http.Error(w, err.Error(), http.StatusBadRequest)
         return
 	}
-	
-	c.Set(id, p, cache.NoExpiration)
-	//fmt.Fprintf(w, "cache: %+v", c)
-	//var x, _ = c.Get(id)
-	//fmt.Fprintf(w, "Pda: %+v", x)
-	
-	json.NewEncoder(w).Encode(c.Items())
+	open(id, p)
+}
 
+// create the PDA struct from the request json
+func open(id string, p PDAProcessor) {
+	p.Id = id
+	resetInternal(&p)
+	c.Set(id, p, cache.NoExpiration)
 }
 
 func returnAllPdas(w http.ResponseWriter, r *http.Request) {
@@ -219,12 +215,14 @@ func put(w http.ResponseWriter, r *http.Request) {
 	proc := p.(PDAProcessor)
 	check_for_first_move(&proc, 1)
 	pos_int, _ := strconv.Atoi(position)
-	if(proc.Next_Position == pos_int) {
+
+	if (proc.Next_Position == pos_int) {
 		fmt.Println ("Calling Put")
 		putInternal(proc,token)
-		//wg.Add(1)
-		process_hold_back_tokens(proc)
-		//wg.Wait()
+
+		wg.Add(1)
+		go process_hold_back_tokens(proc)
+		wg.Wait()
 
 	} else
 	{
@@ -234,6 +232,7 @@ func put(w http.ResponseWriter, r *http.Request) {
 		hold_back.Hold_back_Position = position
 
 		proc.Hold_back_Queue = append(proc.Hold_back_Queue , hold_back)
+		
 		sort.Slice(proc.Hold_back_Queue, func(i, j int) bool {
 			return proc.Hold_back_Queue[i].Hold_back_Position > proc.Hold_back_Queue[j].Hold_back_Position
 		})
@@ -243,7 +242,7 @@ func put(w http.ResponseWriter, r *http.Request) {
 }
 
 func process_hold_back_tokens(proc PDAProcessor) {
-	//defer wg.Done()
+	defer wg.Done()
 	for {
 		if(len(proc.Hold_back_Queue) == 0) {
 			break
@@ -255,7 +254,6 @@ func process_hold_back_tokens(proc PDAProcessor) {
 		if(proc.Next_Position == pos_int) {
 			proc.Hold_back_Queue = proc.Hold_back_Queue[:len(proc.Hold_back_Queue) -1]
 			putInternal(proc,hold_back.Hold_back_Token)
-			//time.Sleep(time.Second)
 		} else 
 		{
 			break
@@ -442,7 +440,6 @@ func check_for_first_move(proc *PDAProcessor, transition_count int){
 		fmt.Println()
 	} 
 
-	//c.Set(proc.Id, proc, cache.NoExpiration)
 }
 
 //Checks whether the input string is composed of the allowed characters. 

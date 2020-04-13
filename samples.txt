@@ -1,0 +1,28 @@
+curl -X PUT -H "Content-Type: application/json" -d '{
+    "name": "HelloPDA",
+    "states": ["q1", "q2", "q3", "q4"],
+    "input_alphabet": [ "0", "1" ],
+    "stack_alphabet" : [ "0", "1" ],
+    "accepting_states": ["q1", "q4"],
+    "start_state": "q1",
+    "transitions": [
+        ["q1", "null", "null", "q2", "$"],
+        ["q2", "0", "null", "q2", "0"],
+        ["q2", "0", "0", "q2", "0"],
+        ["q2", "1", "0", "q3", "null"],
+        ["q3", "1", "0", "q3", "null"],
+        ["q3", "null", "$", "q4", "null"]
+    ],
+    "eos": "$"
+}' http://localhost:8080/pdas/100
+
+
+curl -X PUT -H "Content-Type: application/json" -d '{"token": "0"}' http://localhost:8080/pdas/100/tokens/0
+
+curl -X GET -H "Content-Type: application/json" http://localhost:8080/pdas
+
+curl -X GET -H "Content-Type: application/json" http://localhost:8080/pdas/100/tokens
+
+curl -X PUT -H "Content-Type: application/json" http://localhost:8080/pdas/100/eos/0
+
+curl -X PUT -H "Content-Type: application/json" http://localhost:8080/pdas/100/is_accepted
