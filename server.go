@@ -50,7 +50,7 @@ type HoldBackStruct struct {
 
 var wg sync.WaitGroup
 
-var pdacache = make(map[string]PDAProcessor) 
+var cache = make(map[string]PDAProcessor) 
 
 // Function to push data on to the stack when executing the PDA. It modifies the stack.
 func push(p *PDAProcessor, val string) {
@@ -67,7 +67,7 @@ func stacklen(w http.ResponseWriter, r *http.Request) {
 	var vars = mux.Vars(r)
 	var id = vars["id"]
 
-	proc := pdacache[id]
+	proc := cache[id]
 	var l = len(proc.Stack)
 
 	json.NewEncoder(w).Encode(l)
@@ -81,7 +81,7 @@ func peek(w http.ResponseWriter, r *http.Request) {
 	var kstring = vars["k"]
 	k, _ := strconv.Atoi(kstring)
 
-	proc := pdacache[id]
+	proc := cache[id]
 	top := peekInternal(&proc, k)
 	
 	json.NewEncoder(w).Encode(top)
@@ -109,7 +109,7 @@ func reset(w http.ResponseWriter, r *http.Request) {
 	var vars = mux.Vars(r)
 	var id = vars["id"]
 
-	p := pdacache[id]
+	p := cache[id]
 	resetInternal(&p)
 }
 
@@ -142,21 +142,21 @@ func createPda(w http.ResponseWriter, r *http.Request) {
 func open(id string, p PDAProcessor) {
 	p.Id = id
 	resetInternal(&p)
-	pdacache[id] = p
+	cache[id] = p
 }
 
 func returnAllPdas(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Endpoint Hit: Return all Pdas")
-	// var allpdas = c.Items()
-	// var count = c.ItemCount()
-
-	// for i := 0; i < count; i++ {
-	// 	var current_pda = allpdas[i]
-
-	// }
+	var pdalist[]PDAInfo
+	for key, value := range cache {
+		info := PDAInfo{
+			Id: key,
+			Name: value.Name,
+		}
+		pdalist = append(pdalist, info)
+	}
 	
-
-	json.NewEncoder(w).Encode(pdacache)
+	json.NewEncoder(w).Encode(pdalist)
 }
 
 
@@ -165,7 +165,7 @@ func is_accepted(w http.ResponseWriter, r *http.Request) {
 	var vars = mux.Vars(r)
 	var id = vars["id"]
 
-	proc := pdacache[id]
+	proc := cache[id]
 
 	flag := false
 	accepting_states := proc.Accepting_states
@@ -202,7 +202,7 @@ func current_state(w http.ResponseWriter, r *http.Request) {
 	var vars = mux.Vars(r)
 	var id = vars["id"]
 
-	proc := pdacache[id]
+	proc := cache[id]
 
 	json.NewEncoder(w).Encode(proc.Current_State)
 
@@ -218,7 +218,7 @@ func put(w http.ResponseWriter, r *http.Request) {
 	json.NewDecoder(r.Body).Decode(&t)
 	var token = t.Token
 
-	proc := pdacache[id]
+	proc := cache[id]
 	check_for_first_move(&proc, 1)
 	pos_int, _ := strconv.Atoi(position)
 
@@ -243,7 +243,7 @@ func put(w http.ResponseWriter, r *http.Request) {
 			return proc.Hold_back_Queue[i].Hold_back_Position > proc.Hold_back_Queue[j].Hold_back_Position
 		})
 
-		pdacache[proc.Id] = proc
+		cache[proc.Id] = proc
 
 	}	
 }
@@ -255,7 +255,7 @@ func process_hold_back_tokens(proc PDAProcessor) {
 			break
 		}
 
-		proc = pdacache[proc.Id]
+		proc = cache[proc.Id]
 		hold_back := proc.Hold_back_Queue[len(proc.Hold_back_Queue) -1]
 		pos_int, _ := strconv.Atoi(hold_back.Hold_back_Position)
 		if(proc.Next_Position == pos_int) {
@@ -340,7 +340,7 @@ func putInternal(proc PDAProcessor, token string){
 			}
 		}	       
 	}
-	pdacache[proc.Id] = proc	
+	cache[proc.Id] = proc	
 }
 
 func gettokens(w http.ResponseWriter, r *http.Request) {
@@ -348,7 +348,7 @@ func gettokens(w http.ResponseWriter, r *http.Request) {
 	var vars = mux.Vars(r)
 	var id = vars["id"]
 
-	proc := pdacache[id]
+	proc := cache[id]
 	for j := 0; j < len(proc.Hold_back_Queue)-1; j++ {
 		fmt.Println("Queued token :", proc.Hold_back_Queue[j].Hold_back_Token, " At position :", proc.Hold_back_Queue[j].Hold_back_Position)
 	}
@@ -360,7 +360,7 @@ func snapshot(w http.ResponseWriter, r *http.Request) {
 	var vars = mux.Vars(r)
 	var id = vars["id"]
 
-	proc := pdacache[id]
+	proc := cache[id]
 	var snap Snapshot
 	snap.Topk = make([]string, 0)
 	snap.Current_State = proc.Current_State
@@ -378,7 +378,7 @@ func eos(w http.ResponseWriter, r *http.Request) {
 	var vars = mux.Vars(r)
 	var id = vars["id"]
 
-	proc := pdacache[id]
+	proc := cache[id]
 
 	length_of_stack := len(proc.Stack)
 	transitions := proc.Transitions
@@ -410,7 +410,7 @@ func eos(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	pdacache[id] = proc
+	cache[id] = proc
 }
 
 // Pushes initial EOS token into the stack and moves to the next state indicating
