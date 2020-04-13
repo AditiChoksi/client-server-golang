@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"log"
 	"github.com/gorilla/mux"
-	"github.com/patrickmn/go-cache"
-	"time"
 	"strconv"
 	"sort"
 	"sync"
@@ -30,6 +28,11 @@ type PDAProcessor struct{
 	Hold_back_Queue [] HoldBackStruct
 }
 
+type PDAInfo struct {
+	Id string
+	Name string
+}
+
 type Snapshot struct { 
 	Topk [] string
 	Current_State string
@@ -45,8 +48,9 @@ type HoldBackStruct struct {
 	Hold_back_Token string
 }
 
-var c = cache.New(5*time.Minute, 2*time.Second)
 var wg sync.WaitGroup
+
+var pdacache = make(map[string]PDAProcessor) 
 
 // Function to push data on to the stack when executing the PDA. It modifies the stack.
 func push(p *PDAProcessor, val string) {
@@ -63,9 +67,7 @@ func stacklen(w http.ResponseWriter, r *http.Request) {
 	var vars = mux.Vars(r)
 	var id = vars["id"]
 
-	var p, _ = c.Get(id)
-	proc := p.(*PDAProcessor)
-
+	proc := pdacache[id]
 	var l = len(proc.Stack)
 
 	json.NewEncoder(w).Encode(l)
@@ -79,9 +81,7 @@ func peek(w http.ResponseWriter, r *http.Request) {
 	var kstring = vars["k"]
 	k, _ := strconv.Atoi(kstring)
 
-	var p, _ = c.Get(id)
-	proc := p.(PDAProcessor)
-
+	proc := pdacache[id]
 	top := peekInternal(&proc, k)
 	
 	json.NewEncoder(w).Encode(top)
@@ -108,8 +108,8 @@ func peekInternal(p *PDAProcessor, k int) []string {
 func reset(w http.ResponseWriter, r *http.Request) {
 	var vars = mux.Vars(r)
 	var id = vars["id"]
-	var pda, _ = c.Get(id)
-	p := pda.(PDAProcessor)
+
+	p := pdacache[id]
 	resetInternal(&p)
 }
 
@@ -142,12 +142,21 @@ func createPda(w http.ResponseWriter, r *http.Request) {
 func open(id string, p PDAProcessor) {
 	p.Id = id
 	resetInternal(&p)
-	c.Set(id, p, cache.NoExpiration)
+	pdacache[id] = p
 }
 
 func returnAllPdas(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Endpoint Hit: Return all Pdas")
-	json.NewEncoder(w).Encode(c.Items())
+	// var allpdas = c.Items()
+	// var count = c.ItemCount()
+
+	// for i := 0; i < count; i++ {
+	// 	var current_pda = allpdas[i]
+
+	// }
+	
+
+	json.NewEncoder(w).Encode(pdacache)
 }
 
 
@@ -156,8 +165,7 @@ func is_accepted(w http.ResponseWriter, r *http.Request) {
 	var vars = mux.Vars(r)
 	var id = vars["id"]
 
-	var p, _ = c.Get(id)
-	proc := p.(PDAProcessor)
+	proc := pdacache[id]
 
 	flag := false
 	accepting_states := proc.Accepting_states
@@ -194,8 +202,7 @@ func current_state(w http.ResponseWriter, r *http.Request) {
 	var vars = mux.Vars(r)
 	var id = vars["id"]
 
-	var p, _ = c.Get(id)
-	proc := p.(*PDAProcessor)
+	proc := pdacache[id]
 
 	json.NewEncoder(w).Encode(proc.Current_State)
 
@@ -211,8 +218,7 @@ func put(w http.ResponseWriter, r *http.Request) {
 	json.NewDecoder(r.Body).Decode(&t)
 	var token = t.Token
 
-	var p, _ = c.Get(id)
-	proc := p.(PDAProcessor)
+	proc := pdacache[id]
 	check_for_first_move(&proc, 1)
 	pos_int, _ := strconv.Atoi(position)
 
@@ -236,7 +242,8 @@ func put(w http.ResponseWriter, r *http.Request) {
 		sort.Slice(proc.Hold_back_Queue, func(i, j int) bool {
 			return proc.Hold_back_Queue[i].Hold_back_Position > proc.Hold_back_Queue[j].Hold_back_Position
 		})
-		c.Set(proc.Id, proc, cache.NoExpiration)
+
+		pdacache[proc.Id] = proc
 
 	}	
 }
@@ -247,8 +254,8 @@ func process_hold_back_tokens(proc PDAProcessor) {
 		if(len(proc.Hold_back_Queue) == 0) {
 			break
 		}
-		var p, _ = c.Get(proc.Id)
-		proc = p.(PDAProcessor)
+
+		proc = pdacache[proc.Id]
 		hold_back := proc.Hold_back_Queue[len(proc.Hold_back_Queue) -1]
 		pos_int, _ := strconv.Atoi(hold_back.Hold_back_Position)
 		if(proc.Next_Position == pos_int) {
@@ -333,15 +340,15 @@ func putInternal(proc PDAProcessor, token string){
 			}
 		}	       
 	}
-	c.Set(proc.Id, proc, cache.NoExpiration)	
+	pdacache[proc.Id] = proc	
 }
 
 func gettokens(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Endpoint Hit: Get Queued tokens")
 	var vars = mux.Vars(r)
 	var id = vars["id"]
-	var p, _ = c.Get(id)
-	proc := p.(PDAProcessor)
+
+	proc := pdacache[id]
 	for j := 0; j < len(proc.Hold_back_Queue)-1; j++ {
 		fmt.Println("Queued token :", proc.Hold_back_Queue[j].Hold_back_Token, " At position :", proc.Hold_back_Queue[j].Hold_back_Position)
 	}
@@ -352,8 +359,8 @@ func snapshot(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Endpoint Hit: Get snapshot")
 	var vars = mux.Vars(r)
 	var id = vars["id"]
-	var p, _ = c.Get(id)
-	proc := p.(PDAProcessor)
+
+	proc := pdacache[id]
 	var snap Snapshot
 	snap.Topk = make([]string, 0)
 	snap.Current_State = proc.Current_State
@@ -371,8 +378,7 @@ func eos(w http.ResponseWriter, r *http.Request) {
 	var vars = mux.Vars(r)
 	var id = vars["id"]
 
-	var p, _ = c.Get(id)
-	proc := p.(PDAProcessor)
+	proc := pdacache[id]
 
 	length_of_stack := len(proc.Stack)
 	transitions := proc.Transitions
@@ -404,7 +410,7 @@ func eos(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	c.Set(proc.Id, proc, cache.NoExpiration)
+	pdacache[id] = proc
 }
 
 // Pushes initial EOS token into the stack and moves to the next state indicating
