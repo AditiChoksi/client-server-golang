@@ -157,7 +157,6 @@ func returnAllPdas(w http.ResponseWriter, r *http.Request) {
 		pdalist = append(pdalist, info)
 	}
 	
-	json.NewEncoder(w).Encode(pdalist)
 }
 
 
@@ -168,27 +167,29 @@ func is_accepted(w http.ResponseWriter, r *http.Request) {
 
 	proc := cache[id]
 
+	flag := is_accepted_internal(proc)
+	if(flag){
+		json.NewEncoder(w).Encode("Input tokens successfully Accepted")
+	} else
+	{
+		json.NewEncoder(w).Encode("Input tokens Rejected by the PDA")
+	}
+}
+
+// Function to check if the input string has been accepted by the pda 
+func is_accepted_internal(proc PDAProcessor) bool{
 	flag := false
 	accepting_states := proc.Accepting_states
 	cs := proc.Current_State
-
-	if len(proc.Stack) == 0 {
+	if len(proc.Stack) == 0 && len(proc.Hold_back_Queue) == 0{
 		for i:= 0; i < len(accepting_states); i++ {
 			if cs == accepting_states[i] {
 				flag = true
-				fmt.Println("\n***************************")
-				fmt.Println("Input token Accepted.")
 				break
 			}
 		}
 	}
-	if !flag {
-		fmt.Println("\n***************************")
-		fmt.Println("Input string Rejected.")
-	}
-
-	json.NewEncoder(w).Encode(flag)
-	//return flag
+	return flag
 }
 
 // The done returns the final status of the current state and the stack after the input string is processed.
@@ -223,58 +224,90 @@ func put(w http.ResponseWriter, r *http.Request) {
 	check_for_first_move(&proc, 1)
 	pos_int, _ := strconv.Atoi(position)
 
-	if (proc.Next_Position == pos_int) {
+	token_processed := false
+	token_blocked := -1
+	var hold_back_flag = false
+	if(proc.Next_Position == pos_int) {
 		fmt.Println ("Calling Put")
-		putInternal(proc,token)
 
-		wg.Add(1)
-		go process_hold_back_tokens(proc)
-		wg.Wait()
+		token_processed = putInternal(proc,token)
+		if(token_processed) {
+			wg.Add(1)
+			go func() {
+   				token_blocked = process_hold_back_tokens(proc)
+			}()
+			wg.Wait()
+		} else
+		{
+			token_blocked = pos_int
+		}
 
 	} else
 	{
 		var hold_back HoldBackStruct
-
+		hold_back_flag = true
 		hold_back.Hold_back_Token = token
 		hold_back.Hold_back_Position = position
 
 		proc.Hold_back_Queue = append(proc.Hold_back_Queue , hold_back)
-		
 		sort.Slice(proc.Hold_back_Queue, func(i, j int) bool {
 			return proc.Hold_back_Queue[i].Hold_back_Position > proc.Hold_back_Queue[j].Hold_back_Position
 		})
-
 		cache[proc.Id] = proc
+		json.NewEncoder(w).Encode("Token kept in hold_back_Queue")
 
 	}	
+	if(token_blocked == -1 && !hold_back_flag) {
+		json.NewEncoder(w).Encode("Token processed successfully. Please enter the next token")
+	} else if(!hold_back_flag) {
+		flag := is_accepted_internal(proc)
+		if(flag){
+			json.NewEncoder(w).Encode("Input tokens successfully Accepted")
+		} else
+		{
+			json.NewEncoder(w).Encode("Input tokens Rejected by the PDA")
+		}
+	} 
 }
 
-func process_hold_back_tokens(proc PDAProcessor) {
+func process_hold_back_tokens(proc PDAProcessor) int{
 	defer wg.Done()
+	token_blocked := -1
+	token_processed := false
 	for {
 		if(len(proc.Hold_back_Queue) == 0) {
 			break
 		}
-
 		proc = cache[proc.Id]
 		hold_back := proc.Hold_back_Queue[len(proc.Hold_back_Queue) -1]
 		pos_int, _ := strconv.Atoi(hold_back.Hold_back_Position)
 		if(proc.Next_Position == pos_int) {
-			proc.Hold_back_Queue = proc.Hold_back_Queue[:len(proc.Hold_back_Queue) -1]
-			putInternal(proc,hold_back.Hold_back_Token)
+			token_processed = putInternal(proc,hold_back.Hold_back_Token)
+			if(!token_processed) {
+				token_blocked = pos_int
+				break
+			} else
+			{
+				proc = cache[proc.Id]
+				proc.Hold_back_Queue = proc.Hold_back_Queue[:len(proc.Hold_back_Queue) -1]
+				cache[proc.Id] = proc
+
+			}
 		} else 
 		{
 			break
 		}
     	
-	}	
+	}
+	return token_blocked	
 }
 
 // This function accepts the input string and performs the necessary transitions and 
 // stack operations for every token,
-func putInternal(proc PDAProcessor, token string){	
+func putInternal(proc PDAProcessor, token string) bool{	
 	transitions := proc.Transitions
 	tran_len := len(transitions)
+	token_processed := false
 	for j := 0; j < tran_len; j++ {
 		var allowed_current_state = transitions[j][0]
 		var input = transitions[j][1]
@@ -305,6 +338,7 @@ func putInternal(proc PDAProcessor, token string){
 				fmt.Println("New State ", target_state)
 				fmt.Println("Stack: ", proc.Stack)
 				proc.Next_Position = proc.Next_Position + 1
+				token_processed = true
 				proc.Current_State = target_state
 				push(&proc, action_item)
 
@@ -316,6 +350,7 @@ func putInternal(proc PDAProcessor, token string){
 				fmt.Println("New State ", target_state)
 				fmt.Println("Stack: ", proc.Stack)
 				proc.Next_Position = proc.Next_Position + 1
+				token_processed = true
 				proc.Current_State = target_state
 				push(&proc, action_item)
 				break
@@ -327,6 +362,7 @@ func putInternal(proc PDAProcessor, token string){
 				fmt.Println("New State ",target_state)
 				fmt.Println("Stack: ", proc.Stack)
 				proc.Next_Position = proc.Next_Position + 1
+				token_processed = true
 				proc.Current_State = target_state
 				break
 				//Neither push nor pop action required
@@ -337,11 +373,13 @@ func putInternal(proc PDAProcessor, token string){
 				fmt.Println("Stack: ", proc.Stack)
 				proc.Current_State = target_state
 				proc.Next_Position = proc.Next_Position + 1
+				token_processed = true
 				break
 			}
 		}	       
 	}
 	cache[proc.Id] = proc	
+	return token_processed
 }
 
 func gettokens(w http.ResponseWriter, r *http.Request) {
@@ -378,6 +416,8 @@ func eos(w http.ResponseWriter, r *http.Request) {
 
 	var vars = mux.Vars(r)
 	var id = vars["id"]
+	var position = vars["position"]
+	pos_int, _ := strconv.Atoi(position)
 
 	proc := cache[id]
 
@@ -400,7 +440,7 @@ func eos(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	if currentStackSymbol == proc.Eos {
+	if currentStackSymbol == proc.Eos && pos_int == proc.Next_Position{
 		fmt.Println("")
 		fmt.Println("Popping last $ from the stack")
 		fmt.Println("Current State ",proc.Current_State)
@@ -469,6 +509,22 @@ func verify_Input_String(proc PDAProcessor, input_string string)bool{
 	return verify
 }
 
+func deletePda(w http.ResponseWriter, r *http.Request) {
+	var vars = mux.Vars(r)
+	var id = vars["id"]
+
+	_, found := cache[id]
+
+	if found {
+		delete(cache, id)
+	} else {
+
+	}
+
+	json.NewEncoder(w).Encode(cache)
+
+}
+
 func  handleRequest() {
 	myRouter := mux.NewRouter().StrictSlash(true)
 
@@ -484,7 +540,7 @@ func  handleRequest() {
 	myRouter.HandleFunc("/pdas/{id}/tokens", gettokens)
 	myRouter.HandleFunc("/pdas/{id}/snapshot/{k}", snapshot)
 	//myRouter.HandleFunc("/pdas/{id}/close", close)
-	//myRouter.HandleFunc("/pdas/{id}/delete", delete)
+	myRouter.HandleFunc("/pdas/{id}/delete", deletePda)
 
 
 	log.Fatal(http.ListenAndServe(":8080", myRouter))
