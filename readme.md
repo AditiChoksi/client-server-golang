@@ -2,75 +2,75 @@
 
 #### Objectives
 
-The objective of this assignment is to process the input string and to verify it against a PushDown Automata. The program requires the following:
-- A JSON file which defines the grammar
-- An optional text file consisting of the string to be processed. If this text file is not provided in the input, the program requires the user to provide the input through standard input.
+The objective of this assignment is to provide REST APIs to process the input tokens and to verify them against a PushDown Automata. The program has the following APIs:
+- /pdas - returns id and name of all pdas
+- /pdas/id - creates a new PDA from the request body provided in the input
+- /pdas/id/reset - returns the PDA i.e. the stack and the queue of unprocessed tokens.
+- /pdas/id/tokens/position - Process the token for the specified location. The token is provided as a part of the request body. If the token position is not one to be immediately processed, then the token is queued for later processing
+- /pdas/id/eos/position - Specifies the position of the last token for the input. 
+- /pdas/id/is_accepted - Specifies if the PDA is in accepting state or not.
+- /pdas/id/stack/top/k - returns the top k symbols from the stack
+- /pdas/id/stack/len - return the length of the stack
+- /pdas/id/state - returns id and name of all pdas
+- /pdas/id/tokens - returns the list of tokens that have been queued for later processing
+- /pdas/id/snapshot/k - returns the current state, the queued tokens and the top k symbols in the stack.
+- /pdas/id/close - 
+- /pdas/id/delete - deletes the pda for the given id
 
-The output of the program states if the provided string was accepted or rejected by the Push Down Automata. It also prints out all the intermediate stages that were taken while processing each input token.
 
 #### How to run the program?
 
-This is a Golang program that is run from the command line with the following command. As samples we have also added two PDA’s grammar1.json and grammar2.json.
+This is a Golang program that is run from the command line. 
 
-#### Method 1:
+Server startup Command: bash start_server.sh
 
-Command to run a go program from command line
+**To create a PDA**
 
-```
-go run processor.go <grammar-file-name> <optional-input-file-name>
-
-```
-
-***Example:***
-
-```
-go run processor.go grammar1.json
-
-```
-
-```
-go run processor.go grammar1.json input.txt
-
-```
-
-#### Expected Output:
-
-- The command line asks for the input string to be entered by the user if the optional input file is not provided as an argument.
-- After the input string is verified, it prints several steps taken by the PDA for consuming the input
-string and final outcome of whether the input string is accepted or rejected.
+curl -X PUT -H "Content-Type: application/json" -d '{
+    "name": "0n1n",
+    "states": ["q1", "q2", "q3", "q4"],
+    "input_alphabet": [ "0", "1" ],
+    "stack_alphabet" : [ "0", "1" ],
+    "accepting_states": ["q1", "q4"],
+    "start_state": "q1",
+    "transitions": [
+        ["q1", "null", "null", "q2", "$"],
+        ["q2", "0", "null", "q2", "0"],
+        ["q2", "0", "0", "q2", "0"],
+        ["q2", "1", "0", "q3", "null"],
+        ["q3", "1", "0", "q3", "null"],
+        ["q3", "null", "$", "q4", "null"]
+    ],
+    "eos": "$"
+}' http://localhost:8080/pdas/100
 
 
-### Method 2:
+**To get back all pdas**
 
-We have created a bash script that executes the program. It can be used as follows:
-
-```
-bash run_using_g1_accept_user_ip.sh
-
-```
-
-Expected Output:
-- This bash script runs for grammar1.json.
-- The command line asks for the input string to be entered by the user.
-- After the input string is verified, it prints several steps taken by the PDA for consuming the input
-string and final outcome of whether the input string is accepted or rejected.
+curl -X GET http://localhost:8080/pdas
 
 
-### To run all test cases
+**To tokens in a PDA**
 
-```
-bash​ ​run_script_with_all_test_cases.sh
+curl -X PUT -H "Content-Type: application/json" -d '{"token": "0"}' http://localhost:8080/pdas/100/tokens/0
 
-```
+**To get current state of PDA**
 
-Expected Output:
-- This bash script runs for both grammar1.json and grammar2.json
-- It consists of default test cases exhibiting standard output and standard error.
+curl -X GET http://localhost:8080/pdas/100/state
 
 
-### Sample Screenshots
+**To get Tokens**
 
-![Input accepted for Grammar 1 example](g1_accepted.png)
+curl -X GET http://localhost:8080/pdas/100/tokens
 
+**To get snapshots**
 
-![Input rejected for Grammar 1 example](g1_rejected.png)
+curl -X GET http://localhost:8080/pdas/100/snapshot/3
+
+**To get EOS**
+
+curl http://localhost:8080/pdas/100/eos/6
+
+**To Get is accepted**
+
+curl http://localhost:8080/pdas/100/is_accepted
