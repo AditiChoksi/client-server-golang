@@ -157,7 +157,6 @@ func returnAllPdas(w http.ResponseWriter, r *http.Request) {
 		pdalist = append(pdalist, info)
 	}
 	
-	json.NewEncoder(w).Encode(pdalist)
 }
 
 
@@ -510,6 +509,22 @@ func verify_Input_String(proc PDAProcessor, input_string string)bool{
 	return verify
 }
 
+func deletePda(w http.ResponseWriter, r *http.Request) {
+	var vars = mux.Vars(r)
+	var id = vars["id"]
+
+	_, found := cache[id]
+
+	if found {
+		delete(cache, id)
+	} else {
+
+	}
+
+	json.NewEncoder(w).Encode(cache)
+
+}
+
 func  handleRequest() {
 	myRouter := mux.NewRouter().StrictSlash(true)
 
@@ -525,7 +540,7 @@ func  handleRequest() {
 	myRouter.HandleFunc("/pdas/{id}/tokens", gettokens)
 	myRouter.HandleFunc("/pdas/{id}/snapshot/{k}", snapshot)
 	//myRouter.HandleFunc("/pdas/{id}/close", close)
-	//myRouter.HandleFunc("/pdas/{id}/delete", delete)
+	myRouter.HandleFunc("/pdas/{id}/delete", deletePda)
 
 
 	log.Fatal(http.ListenAndServe(":8080", myRouter))
