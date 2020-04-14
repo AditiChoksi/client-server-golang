@@ -1,2 +1,2 @@
 echo "-----------------------Starting server-----------------" 
-go run server.go
+go run objects_definitions.go helpers.go server.go
