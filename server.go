@@ -154,17 +154,31 @@ func put(w http.ResponseWriter, r *http.Request) {
 		}
 
 	} else if (proc.Next_Position < pos_int) {
-		var hold_back HoldBackStruct
-		hold_back_flag = true
-		hold_back.Hold_back_Token = token
-		hold_back.Hold_back_Position = position
+		var duplicate_token = false
 
-		proc.Hold_back_Queue = append(proc.Hold_back_Queue , hold_back)
-		sort.Slice(proc.Hold_back_Queue, func(i, j int) bool {
-			return proc.Hold_back_Queue[i].Hold_back_Position > proc.Hold_back_Queue[j].Hold_back_Position
-		})
-		cache[proc.Id] = proc
-		json.NewEncoder(w).Encode("Token kept in hold_back_Queue")
+
+		for _, v := range proc.Hold_back_Queue {
+			hold_back_pos_int, _ := strconv.Atoi(v.Hold_back_Position)
+    		if hold_back_pos_int == pos_int {
+        		duplicate_token = true
+    		}
+		}
+		if(!duplicate_token) {
+			var hold_back HoldBackStruct
+			hold_back_flag = true
+			hold_back.Hold_back_Token = token
+			hold_back.Hold_back_Position = position
+
+			proc.Hold_back_Queue = append(proc.Hold_back_Queue , hold_back)
+			sort.Slice(proc.Hold_back_Queue, func(i, j int) bool {
+				return proc.Hold_back_Queue[i].Hold_back_Position > proc.Hold_back_Queue[j].Hold_back_Position
+			})
+			cache[proc.Id] = proc
+			json.NewEncoder(w).Encode("Token kept in hold_back_Queue")
+		} else 
+		{
+			json.NewEncoder(w).Encode("Duplicate token received")
+		}
 
 	} else 
 	{

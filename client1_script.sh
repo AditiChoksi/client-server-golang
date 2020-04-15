@@ -27,6 +27,10 @@ curl -X PUT -H "Content-Type: application/json" -d '{"token": "0"}' http://local
 
 printf "\n"
 
+curl -X PUT -H "Content-Type: application/json" -d '{"token": "0"}' http://localhost:8080/pdas/100/tokens/1
+
+printf "\n"
+
 curl -X PUT -H "Content-Type: application/json" -d '{"token": "0"}' http://localhost:8080/pdas/100/tokens/2
 
 
