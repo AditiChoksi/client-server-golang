@@ -64,7 +64,14 @@ func createPda(w http.ResponseWriter, r *http.Request) {
         http.Error(w, err.Error(), http.StatusBadRequest)
         return
 	}
-	open(id, p)
+	created := open(id, p)
+
+	if created {
+		json.NewEncoder(w).Encode("PDA successfully created.")
+	} else 
+	{
+		json.NewEncoder(w).Encode("Cannot create PDA. A PDA with this id already exists.")
+	}
 }
 
 func returnAllPdas(w http.ResponseWriter, r *http.Request) {

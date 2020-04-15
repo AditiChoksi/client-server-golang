@@ -1,4 +1,4 @@
-printf "\n---------------- Create PDA with id 100 -----------------" 
+printf "\n---------------- Create PDA with id 100 -----------------\n" 
 curl -X PUT -H "Content-Type: application/json" -d '{
     "name": "0n1n",
     "states": ["q1", "q2", "q3", "q4"],
@@ -17,7 +17,6 @@ curl -X PUT -H "Content-Type: application/json" -d '{
     "eos": "$"
 }' http://localhost:8080/pdas/100
 
-printf "\n PDA created"
 
 curl -X GET http://localhost:8080/pdas
 
