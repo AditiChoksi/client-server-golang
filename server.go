@@ -294,6 +294,10 @@ func deletePda(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func close(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode("Success. No resources to clean.")
+}
+
 func  handleRequest() {
 	myRouter := mux.NewRouter().StrictSlash(true)
 
@@ -308,7 +312,7 @@ func  handleRequest() {
 	myRouter.HandleFunc("/pdas/{id}/state", current_state)
 	myRouter.HandleFunc("/pdas/{id}/tokens", gettokens)
 	myRouter.HandleFunc("/pdas/{id}/snapshot/{k}", snapshot)
-	//myRouter.HandleFunc("/pdas/{id}/close", close)
+	myRouter.HandleFunc("/pdas/{id}/close", close)
 	myRouter.HandleFunc("/pdas/{id}/delete", deletePda)
 
 
