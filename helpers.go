@@ -40,10 +40,19 @@ func resetInternal(p *PDAProcessor) {
 }
 
 // create the PDA struct from the request json
-func open(id string, p PDAProcessor) {
+func open(id string, p PDAProcessor) bool {
+	
 	p.Id = id
-	resetInternal(&p)
-	cache[id] = p
+
+	_, found := cache[id]
+
+	if !found {
+		resetInternal(&p)
+		cache[id] = p
+		return true
+	}
+
+	return false
 }
 
 // Function to check if the input string has been accepted by the pda 
